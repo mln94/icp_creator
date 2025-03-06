@@ -22,49 +22,53 @@ def get_value_proposition(url):
     except Exception as e:
         print(e)
 
-assistant = client.beta.assistants.create(
-    name="Ideal Customer Profil creator assistant",
-    instructions="You are a Ideal Cutomer Profil (ICP) creator assistant.",
-    tools=[
-        {
-            "type":"function",
-            "function": {
-                "name":"get_value_proposition",
-                "description":"Get the value proposition for the given url",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL of the company"
-                        }
-                    },
-                    "required": ["url"]
-                }   
+def create_assistant(url):
+    assistant = client.beta.assistants.create(
+        name="Ideal Customer Profil creator assistant",
+        instructions="You are a Ideal Cutomer Profil (ICP) creator assistant.",
+        tools=[
+            {
+                "type":"function",
+                "function": {
+                    "name":"get_value_proposition",
+                    "description":"Get the value proposition for the given url",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "description": "The URL of the company"
+                            }
+                        },
+                        "required": ["url"]
+                    }   
+                }
             }
-        }
-    ],
-    model=model
-)
+        ],
+        model=model
+    )
 
-thread = client.beta.threads.create()
+    thread = client.beta.threads.create()
 
-message = client.beta.threads.messages.create(
-    thread_id=thread.id,
-    role="user",
-    content=f"What is the ICP for this url: https://www.deluj.com "
-)
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=f"What is the ICP for this url: {url} in French please"
+    )
 
-run = client.beta.threads.runs.create_and_poll(
-    thread_id=thread.id,
-    assistant_id=assistant.id
-)
+    run = client.beta.threads.runs.create_and_poll(
+        thread_id=thread.id,
+        assistant_id=assistant.id
+    )
 
-def process_message():
+    wait_for_completion(thread,run)
+
+def process_message(thread,run):
     messages = client.beta.threads.messages.list(thread_id=thread.id)
-    print(messages.data[0].content[0].text.value)
+    st.write(messages.data[0].content[0].text.value)
+    # print(messages.data[0].content[0].text.value)
 
-def call_required_functions(required_actions):
+def call_required_functions(thread,run,required_actions):
     tool_outputs = []
     for action in required_actions:
         func_name = action.function.name
@@ -83,18 +87,30 @@ def call_required_functions(required_actions):
     print("Submitting outputs back to the Assistant...")       
     client.beta.threads.runs.submit_tool_outputs_and_poll(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
 
-def wait_for_completion():
+def wait_for_completion(thread,run):
     if thread and run:
         while True:
             time.sleep(5)
             run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
             print(run_status.status)
             if run_status.status == "completed":
-                process_message()
+                process_message(thread,run)
                 # messages = client.beta.threads.messages.list(thread_id=thread.id)
                 # print(messages.data[0].content[0].text.value)
                 break
             elif run_status.status == "requires_action":
-                call_required_functions(required_actions = run.required_action.submit_tool_outputs.tool_calls)
+                call_required_functions(thread,run,required_actions = run.required_action.submit_tool_outputs.tool_calls)
 
 def main():
+    st.title("Ideal Customer Profil creator (ICP)")
+
+    with st.form(key="user_input_form"):
+        url = st.text_input("Enter url:")
+        submit_button = st.form_submit_button(label="Run Assistant")
+
+        if submit_button:
+            create_assistant(url)
+
+
+if __name__ == "__main__":
+    main()
